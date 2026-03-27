@@ -63,7 +63,107 @@ sc.pl.umap(
     size=2,
 )
 
+# Using the igraph implementation and a fixed number of iterations can be significantly faster,
+# especially for larger datasets
+sc.tl.leiden(sc_data, flavor="igraph", n_iterations=2)
+sc.pl.umap(sc_data, color=["leiden"])
 
+sc.pl.umap(
+    sc_data,
+    color=["leiden", "predicted_doublet", "doublet_score"],
+    wspace=0.5,
+    size=3,
+)
 
+sc.pl.umap(
+    sc_data,
+    color=["leiden", "log1p_total_counts", "pct_counts_mt", "log1p_n_genes_by_counts"],
+    wspace=0.5,
+    ncols=2,
+)
+
+# Filtering out the predicted doublets
+sc_data = sc_data[sc_data.obs['predicted_doublet'] == False].copy()
+
+# QC to ensure that the doublets have been removed
+sc.pl.umap(
+    sc_data,
+    color=["leiden", "predicted_doublet", "doublet_score"],
+    # increase horizontal space between panels
+    wspace=0.5,
+    size=3
+)
+
+# Look at different resolutions of UMAP clustering
+for res in [0.02, 0.35, 2.0]:
+    sc.tl.leiden(sc_data, key_added=f"leiden_res_{res:4.2f}", resolution=res, flavor="igraph")
+sc.pl.umap(
+    sc_data,
+    color=["leiden_res_0.02", "leiden_res_0.35", "leiden_res_2.00"],
+    legend_loc="on data",
+)
+
+for res in [0.5]:
+    sc.tl.leiden(sc_data, key_added=f"leiden_res_{res:4.2f}", resolution=res, flavor="igraph")
+sc.pl.umap(
+    sc_data,
+    color=["leiden_res_0.50"],
+    legend_loc="on data",
+)
+
+marker_genes = {
+    "CD14+ Mono": ["FCN1", "CD14", "LYZ"],
+    "CD16+ Mono": ["TCF7L2", "FCGR3A", "LYN", "CD16", "FCGR3A", "MS4A7"],
+    # Note: DMXL2 should be negative
+    "cDC2": ["CST3", "COTL1", "LYZ", "DMXL2", "CLEC10A", "FCER1A", "CD1C"],
+    "Erythroblast": ["MKI67", "HBA1", "HBB", "HBA2"],
+    # Note HBM and GYPA are negative markers
+    "Proerythroblast": ["CDK6", "SYNGR1", "HBM", "GYPA", "KLF1", "GATA1"],
+    "NK": ["GNLY", "NKG7", "CD247", "FCER1G", "TYROBP", "KLRG1", "FCGR3A", "KLRD1", "PRF1"],
+    "ILC": ["ID2", "PLCG2", "GNLY", "SYNE1", "IL7R", "CD127", "TNFRSF18"],
+    "Naive CD20+ B": ["MS4A1", "IL4R", "IGHD", "FCRL1", "IGHM", "CD19"],
+    # Note IGHD and IGHM are negative markers
+    "B cells": [
+        "MS4A1",
+        "ITGB1",
+        "COL4A4",
+        "PRDM1",
+        "IRF4",
+        "PAX5",
+        "BCL11A",
+        "BLK",
+        "IGHD",
+        "IGHM",
+        "CD79A"
+        "CD79B"
+        "BANK1"
+    ],
+    "Plasma cells": ["MZB1", "HSP90B1", "FNDC3B", "PRDM1", "IGKC", "JCHAIN", "SDC1"],
+    # Note PAX5 is a negative marker
+    "Plasmablast": ["XBP1", "PRDM1", "PAX5", "CD38"],
+    "CD4+ T": ["CD4", "IL7R", "TRBC2"],
+    "CD8+ T": ["CD8A", "CD8B", "GZMK", "GZMA", "CCL5", "GZMB", "GZMH", "GZMA"],
+    "T naive": ["LEF1", "CCR7", "TCF7", "IL7R", "CCR7"],
+    "pDC": ["GZMB", "IL3RA", "COBLL1", "TCF4", "LILRA4", "TCF4"],
+}
+
+# Filter marker_genes to only include genes in sc_data
+marker_genes_filtered = {
+    ct: [g for g in genes if g in sc_data.var_names]
+    for ct, genes in marker_genes.items()
+}
+# Remove any cell types with no remaining genes
+marker_genes_filtered = {ct: genes for ct, genes in marker_genes_filtered.items() if genes}
+
+sc.pl.dotplot(sc_data, marker_genes_filtered, groupby="leiden_res_0.50", standard_scale="var")
+
+# Obtain cluster-specific differentially expressed genes
+# Remove cells in clusters with fewer than 2 cells
+cluster_counts = sc_data.obs["leiden_res_0.50"].value_counts()
+keep_clusters = cluster_counts[cluster_counts >= 2].index
+sc_data_filtered = sc_data[sc_data.obs["leiden_res_0.50"].isin(keep_clusters)].copy()
+
+sc.tl.rank_genes_groups(sc_data_filtered, groupby="leiden_res_0.50", method="wilcoxon")
+sc.pl.rank_genes_groups_dotplot(sc_data_filtered, groupby="leiden_res_0.50", standard_scale="var", n_genes=5)
 
 
