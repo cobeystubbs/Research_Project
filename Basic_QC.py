@@ -54,7 +54,14 @@ sc.tl.pca(adata)
 # Inspect contribution of single PCs to inform how many to consider when computing the neighbourhood relation of cells
 sc.pl.pca_variance_ratio(adata, n_pcs=50, log=True)
 
-
+# Plotting PCA
+sc.pl.pca(
+    adata,
+    color=["sample", "sample", "pct_counts_mt", "pct_counts_mt"],
+    dimensions=[(0, 1), (2, 3), (0, 1), (2, 3)],
+    ncols=2,
+    size=2,
+)
 
 
 
