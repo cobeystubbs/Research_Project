@@ -2,6 +2,8 @@
 import anndata as ad
 import scanpy as sc
 import pandas as pd
+import celltypist as ct
+from matplotlib import rc_context
 
 # Load in the data
 # Starting with the 10X genomics MTX data
@@ -144,6 +146,7 @@ marker_genes = {
     "CD4+ T": ["CD4", "IL7R", "TRBC2"],
     "CD8+ T": ["CD8A", "CD8B", "GZMK", "GZMA", "CCL5", "GZMB", "GZMH", "GZMA"],
     "T naive": ["LEF1", "CCR7", "TCF7", "IL7R", "CCR7"],
+    "T cell": ["CD69", "HLA-DRA", "IL2RA", "CD25"],
     "pDC": ["GZMB", "IL3RA", "COBLL1", "TCF4", "LILRA4", "TCF4"],
 }
 
@@ -165,5 +168,48 @@ sc_data_filtered = sc_data[sc_data.obs["leiden_res_0.50"].isin(keep_clusters)].c
 
 sc.tl.rank_genes_groups(sc_data_filtered, groupby="leiden_res_0.50", method="wilcoxon")
 sc.pl.rank_genes_groups_dotplot(sc_data_filtered, groupby="leiden_res_0.50", standard_scale="var", n_genes=5)
+sc.pl.rank_genes_groups_dotplot(sc_data_filtered, groupby="leiden_res_0.50", standard_scale="var", n_genes=15)
 
 
+sc_data.obs["cell_type_lvl1"] = sc_data.obs["leiden_res_0.50"].map(
+    {
+        "0": "B cells",
+        "1": "?",
+        "2": "NK cells",
+        "3": "?",
+        "4": "pDC cells",
+        "5": "monocytes",
+        "6": "dendritic cells",
+        "7": "mitochondrial cluster",
+        "8": "naive CD20+ B cells",
+        "9": "T cells",
+    }
+)
+
+sc.pl.umap(
+    sc_data,
+    color=["cell_type_lvl1"],
+    # increase horizontal space between panels
+    wspace=0.5,
+    size=10,
+)
+
+# Using celltypist to predict the cell types and annotate clusters
+predictions = ct.annotate(sc_data, majority_voting = False)
+predictions_adata = predictions.to_adata()
+sc.pl.umap(predictions_adata, color="predicted_labels")
+
+color_vars = [
+    "TFAM"
+]
+with rc_context({"figure.figsize": (3, 3)}):
+    sc.pl.umap(sc_data, color=color_vars, s=50, frameon=False, ncols=4, vmax="p99",
+               save="umap_tfam.svg")
+
+
+
+# pD1 marker
+# plot on umap the mt genes + see if they pop up everywhere (they should)
+# can we create a mitochondrial score from those genes that mimics the amount of mitochondria inside (mean, median expression of genes?)
+# some are always there - expect robust
+# mitocarta
