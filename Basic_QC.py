@@ -4,6 +4,15 @@ import scanpy as sc
 import pandas as pd
 import celltypist as ct
 from matplotlib import rc_context
+import numpy as np
+from scvi_colab import install
+import os
+import tempfile
+import matplotlib.pyplot as plt
+import scvi
+import seaborn as sns
+import torch
+from celltypist import models
 
 # Load in the data
 # Starting with the 10X genomics MTX data
@@ -148,6 +157,8 @@ marker_genes = {
     "T naive": ["LEF1", "CCR7", "TCF7", "IL7R", "CCR7"],
     "T cell": ["CD69", "HLA-DRA", "IL2RA", "CD25"],
     "pDC": ["GZMB", "IL3RA", "COBLL1", "TCF4", "LILRA4", "TCF4"],
+    "granulocytes": ["ADGRG3", "FCGR3B", "MCEMP1", "ORM1", "CXCL2", "PI3", "AQP9", "SLC11A1", "CXCL8", "G0S2"],
+    "neutrophil markers": ["FCGR3B","S100A8","S100A9","CSF3R","MXD1","ITM2B","S100A6","FTL","ACTB","DHFR"]
 }
 
 # Filter marker_genes to only include genes in sc_data
@@ -174,7 +185,7 @@ sc.pl.rank_genes_groups_dotplot(sc_data_filtered, groupby="leiden_res_0.50", sta
 sc_data.obs["cell_type_lvl1"] = sc_data.obs["leiden_res_0.50"].map(
     {
         "0": "B cells",
-        "1": "?",
+        "1": "T cells",
         "2": "NK cells",
         "3": "?",
         "4": "pDC cells",
@@ -206,10 +217,178 @@ with rc_context({"figure.figsize": (3, 3)}):
     sc.pl.umap(sc_data, color=color_vars, s=50, frameon=False, ncols=4, vmax="p99",
                save="umap_tfam.svg")
 
+color_vars = [
+    "POLG"
+]
+with rc_context({"figure.figsize": (3, 3)}):
+    sc.pl.umap(sc_data, color=color_vars, s=50, frameon=False, ncols=4, vmax="p99",
+               save="umap-polg.svg")
 
+mt_genes = [
+    "MT-ND1","MT-ND2","MT-ND3","MT-ND4","MT-ND4L","MT-ND5","MT-ND6",
+    "MT-CO1","MT-CO2","MT-CO3",
+    "MT-ATP6","MT-ATP8",
+    "MT-CYB"
+]
+mt_genes = [g for g in mt_genes if g in sc_data.var_names]
+sc_data.obs["mt_mean"] = np.array(
+    sc_data[:, mt_genes].X.mean(axis=1)
+).flatten()
+sc.pl.umap(sc_data, color="mt_mean", cmap="viridis", vmax=3.5)
+
+sc_data.obs["mt_median"] = np.median(
+    sc_data[:, mt_genes].X.toarray(), axis=1)
+sc.pl.umap(sc_data, color="mt_median", cmap="plasma")
+
+sc_data.obs["mt_var"] = np.var(
+    sc_data[:, mt_genes].X.toarray(), axis=1)
+sc.pl.umap(sc_data, color="mt_var", cmap="plasma")
+
+present = [g for g in mt_genes if g in sc_data.var_names]
+missing = [g for g in mt_genes if g not in sc_data.var_names]
+
+print("Present:", present)
+print("Missing:", missing)
+print(f"{len(present)}/13 genes found")
+
+# Extract mt genes expression as a dense array
+mt_values = sc_data[:, mt_genes].X.toarray()
+# Compute range per cell
+sc_data.obs["mt_range"] = mt_values.max(axis=1) - mt_values.min(axis=1)
+sc.pl.umap(
+    sc_data,
+    color="mt_range",
+    cmap="plasma",
+    vmin="p1",  # optional: ignore extreme outliers
+    vmax="p99"
+)
+
+neutrophil_markers = ["FCGR3B", "S100A8", "S100A9", "CSF3R", "MXD1", "ITM2B", "S100A6", "FTL", "ACTB", "DHFR"]
+neutrophil_markers = [g for g in neutrophil_markers if g in sc_data.var_names]
+sc_data.obs["neut_mean"] = np.array(
+    sc_data[:, neutrophil_markers].X.mean(axis=1)
+).flatten()
+sc.pl.umap(sc_data, color="neut_mean", cmap="viridis", vmax=3.5)
+
+# Getting rid of the neutrophil cluster
+sc_data_filtered = sc_data[~sc_data.obs["cell_type_lvl1"].isin(['?'])].copy()
+sc.pl.umap(
+    sc_data_filtered,
+    color=["cell_type_lvl1"],
+    # increase horizontal space between panels
+    wspace=0.5,
+    size=10,
+)
+
+# 1. Get counts (descending)
+counts = predictions_adata.obs["predicted_labels"].value_counts()
+ordered_labels = counts.index.tolist()
+# 2. Rebuild categorical (force order)
+predictions_adata.obs["predicted_labels"] = pd.Categorical(
+    predictions_adata.obs["predicted_labels"],
+    categories=ordered_labels,
+    ordered=True
+)
+# 3. REMOVE old colors (this is the key step people miss)
+if "predicted_labels_colors" in predictions_adata.uns:
+    del predictions_adata.uns["predicted_labels_colors"]
+# 4. Plot (Scanpy will now respect your order)
+sc.pl.umap(
+    predictions_adata,
+    color="predicted_labels",
+    legend_loc='right margin',
+    legend_fontsize=7
+)
+
+models.download_models(force_update = True)
+#model = models.Model.load(model = 'Immune_All_Low.pkl')
+
+predictions = ct.annotate(sc_data_filtered, model = 'Healthy_COVID19_PBMC.pkl', majority_voting = True)
+sc_data_filtered_ct = predictions.to_adata()
+
+counts = sc_data_filtered_ct.obs["predicted_labels"].value_counts()
+ordered_labels = counts.index.tolist()
+sc_data_filtered_ct.obs["predicted_labels"] = pd.Categorical(
+    sc_data_filtered_ct.obs["predicted_labels"],
+    categories=ordered_labels,
+    ordered=True
+)
+if "predicted_labels_colors" in sc_data_filtered_ct.uns:
+    del sc_data_filtered_ct.uns["predicted_labels_colors"]
+
+sc.pl.umap(
+    sc_data_filtered_ct,
+    color="predicted_labels",
+    legend_loc='right margin',
+    legend_fontsize=7
+)
+sc.pl.umap(
+    sc_data_filtered_ct,
+    color="predicted_labels",
+    legend_loc='right margin',
+    legend_fontsize=7
+)
 
 # pD1 marker
 # plot on umap the mt genes + see if they pop up everywhere (they should)
 # can we create a mitochondrial score from those genes that mimics the amount of mitochondria inside (mean, median expression of genes?)
 # some are always there - expect robust
 # mitocarta
+# Label transfer - use scvi - download 10x dataset from somewhere else and integrate datasets
+
+# Integration and label transfer
+
+# ??
+# Reference dataset (PBMC)
+example_data = scvi.data.pbmc_dataset()
+
+example_data.obs["labels"] = example_data.obs["str_labels"].astype("category")
+
+scvi.model.SCVI.setup_anndata(example_data)
+
+scvi_model = scvi.model.SCVI(example_data)
+scvi_model.train()
+
+scanvi_model = scvi.model.SCANVI.from_scvi_model(
+    scvi_model,
+    labels_key="labels",
+    unlabeled_category="Unknown"
+)
+
+scanvi_model.train()
+
+reference_genes = scanvi_model.adata.var_names
+
+# Subset query to only genes present in reference
+sc_data_filtered = sc_data_filtered[:, sc_data_filtered.var_names.isin(reference_genes)].copy()
+
+print("Query shape after subsetting:", sc_data_filtered.shape)
+
+scvi.model.SCVI.prepare_query_anndata(sc_data_filtered, scanvi_model)
+
+query_model = scvi.model.SCANVI.load_query_data(
+    sc_data_filtered,
+    scanvi_model
+)
+
+query_model.train(max_epochs=100)
+
+sc_data_filtered.obs["predicted_labels"] = query_model.predict()
+
+print(sc_data_filtered.obs["predicted_labels"].value_counts())
+
+# Visualisation in UMAP
+sc_data_filtered.obsm["X_scVI"] = query_model.get_latent_representation()
+
+sc.pp.neighbors(sc_data_filtered, use_rep="X_scVI")
+sc.tl.umap(sc_data_filtered)
+
+sc.pl.umap(
+    sc_data_filtered,
+    color="predicted_labels",
+    legend_loc="on data",
+    frameon=False
+)
+
+# Use RNA velocity - any cell that contains only fully spliced mRNA is likely to be
+# a halflet (unless its just a cell that just has only mature mRNA
