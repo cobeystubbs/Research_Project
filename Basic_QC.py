@@ -1,3 +1,5 @@
+# Python version 3.13.9
+
 # Importing the necessary packages
 import anndata as ad
 import scanpy as sc
