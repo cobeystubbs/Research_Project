@@ -4,33 +4,27 @@
 import scvelo as scv
 import scanpy as sc
 
-scv.logging.print_version()
+def main():
+    scv.logging.print_version()
 
-scv.settings.verbosity = 3  # show errors(0), warnings(1), info(2), hints(3)
-scv.settings.presenter_view = True  # set max width size for presenter view
-scv.set_figure_params('scvelo')  # for beautified visualization
+    scv.settings.verbosity = 3
+    scv.settings.presenter_view = True
+    scv.set_figure_params('scvelo')
 
-adata = sc.read('/Users/cobeystubbs/Downloads/adata.loom')
-adata.layers['unspliced'] = adata.layers['nascent']
-adata.layers['spliced'] = adata.layers['mature']
+    adata = sc.read('/Users/cobeystubbs/Downloads/WBC011.loom')
 
-print(adata)
+    scv.pl.proportions(adata)
 
-print(adata.layers.keys())
-adata_filtered = adata.copy()
+    scv.pp.filter_and_normalize(adata)
+    scv.pp.moments(adata)
 
-import scanpy as sc
-print(adata)
-print(adata.layers.keys())
-scv.pl.proportions(adata)
+    scv.tl.velocity(adata)
+    scv.tl.velocity_graph(adata)
 
-import numpy as np
+    sc.pp.neighbors(adata)
+    sc.tl.umap(adata)
 
-print("Total spliced:", np.sum(adata.layers["spliced"]))
-print("Total unspliced:", np.sum(adata.layers["unspliced"]))
-cell_counts = np.sum(adata.layers["spliced"] + adata.layers["unspliced"], axis=1)
-print(np.sum(cell_counts == 0))
+    scv.pl.velocity_embedding_stream(adata, basis="umap")
 
-adata_filtered = adata.copy()
-scv.pp.filter_genes(adata_filtered, min_shared_counts=1)
-print(adata_filtered)
+if __name__ == "__main__":
+    main()
